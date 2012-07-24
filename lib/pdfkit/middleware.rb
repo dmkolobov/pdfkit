@@ -1,6 +1,8 @@
 class PDFKit
 
   class Middleware
+    extend Forwardable
+    def_delegator ActiveSupport::Notifications, :instrument, :instrument
 
     def initialize(app, options = {}, conditions = {})
       @app        = app
@@ -16,17 +18,19 @@ class PDFKit
       status, headers, response = @app.call(env)
 
       if rendering_pdf? && headers['Content-Type'] =~ /text\/html|application\/xhtml\+xml/
-        body = response.respond_to?(:body) ? response.body : response.join
-        body = body.join if body.is_a?(Array)
-        body = PDFKit.new(translate_paths(body, env), @options).to_pdf
-        response = [body]
+        instrument 'generate.pdfkit' do
+          body = response.respond_to?(:body) ? response.body : response.join
+          body = body.join if body.is_a?(Array)
+          body = PDFKit.new(translate_paths(body, env), @options).to_pdf
+          response = [body]
 
-        # Do not cache PDFs
-        headers.delete('ETag')
-        headers.delete('Cache-Control')
+          # Do not cache PDFs
+          headers.delete('ETag')
+          headers.delete('Cache-Control')
 
-        headers["Content-Length"]         = (body.respond_to?(:bytesize) ? body.bytesize : body.size).to_s
-        headers["Content-Type"]           = "application/pdf"
+          headers["Content-Length"]         = (body.respond_to?(:bytesize) ? body.bytesize : body.size).to_s
+          headers["Content-Type"]           = "application/pdf"
+        end
       end
 
       [status, headers, response]
